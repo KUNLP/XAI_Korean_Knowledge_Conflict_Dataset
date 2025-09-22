@@ -8,7 +8,6 @@ class ModelHandler:
         self.model_name = model_name
         self.tokenizer = None
         self.model = None
-        self.data = None
     
     # 모델과 토크나이저 설정
     def setup_model(self):
