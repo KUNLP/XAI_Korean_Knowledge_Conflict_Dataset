@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+
+# Results and outputs
+results/
+evaluation_results.jsonl
