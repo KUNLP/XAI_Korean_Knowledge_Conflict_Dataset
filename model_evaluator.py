@@ -31,31 +31,26 @@ class ModelEvaluator:
     # 1. 모델 평가 프롬프트 생성 (질문만)
     def create_prompt_question(self, question: str, choices: List[str]) -> str:
         formatted_choices = "\n".join([f"{self.labels[i]}. {choice}" for i, choice in enumerate(choices)])
-        
-        prompt = f"""[지시]
-질문을 읽고 선택지 중에서 가장 적절한 정답을 하나만 선택하세요.  
+        system_prompt = """질문을 보고 선택지 중에서 가장 적절한 정답을 하나만 선택하세요.  
 정답은 반드시 A, B, C, D 중 알파벳 한 글자만 출력하세요.  
 절대 해설이나 설명은 쓰지 마세요.  
-정답만 출력하세요.
-
+정답만 출력하세요."""
+        prompt = f"""
 [질문]: 
 {question}
 
 [선택지]
 {formatted_choices}
 ### 정답:"""
-        return prompt
+        return system_prompt, prompt
     # 2. 모델 평가 프롬프트 생성 (질문 + 문맥)
     def create_prompt_question_with_context(self, question: str, choices: List[str], context: str) -> str:
         formatted_choices = "\n".join([f"{self.labels[i]}. {choice}" for i, choice in enumerate(choices)])
-            
-        prompt = f"""[지시]
-질문을 읽고 문맥을 참고하여 선택지 중에서 가장 적절한 정답을 하나만 선택하세요.  
+        system_prompt = """질문을 보고 문맥을 참고하여 선택지 중에서 가장 적절한 정답을 하나만 선택하세요.  
 정답은 반드시 A, B, C, D 중 알파벳 한 글자만 출력하세요.  
 절대 해설이나 설명은 쓰지 마세요.  
-정답만 출력하세요.
-
-[문맥]:
+정답만 출력하세요."""
+        prompt = f"""[문맥]:
 {context}
 
 [질문]: 
@@ -64,24 +59,32 @@ class ModelEvaluator:
 [선택지]
 {formatted_choices}
 ### 정답:"""
-        return prompt
+        return system_prompt, prompt
 
-    # 모델 추론 실행    
+    # 모델 추론 실행 (apply_chat_template 사용)
     def run_model(self, question: str, choices: List[str], context: Optional[str] = None) -> str:
+        # 기존 프롬프트 생성 함수 사용
         if context is None:
-            prompt = self.create_prompt_question(question, choices)
+            SYSTEM_PROMPT, PROMPT = self.create_prompt_question(question, choices)
         else:
-            prompt = self.create_prompt_question_with_context(question, choices, context)
+            SYSTEM_PROMPT, PROMPT = self.create_prompt_question_with_context(question, choices, context)
         
-        # 모델 입력 구성
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        # 채팅 메시지 구성
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": PROMPT}
+        ]
+        
+        # 토크나이저 적용 (apply_chat_template)
+        inputs = self.tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt"
+        ).to(self.model.device)
+        
         input_len = inputs["input_ids"].shape[-1]
-        
-        # EOS 토큰 체크
-        # if self.tokenizer.eos_token_id is not None:
-        #     print("EOS 토큰 존재")
-        # else:
-        #     print("EOS 토큰 없음")
 
         with torch.no_grad():
             outputs = self.model.generate(
@@ -98,9 +101,8 @@ class ModelEvaluator:
         print("🧩 모델 응답:", decoded)
         predicted = self.clean_prediction(decoded)
         print("🧼 최종 predicted:", predicted)
-        print(f"prompt : \n{prompt}")
-        print("--------------------------------"
-        )
+        print(f"prompt : \n{SYSTEM_PROMPT}\n{PROMPT}")
+        print("--------------------------------")
         return predicted
     
     def evaluate_question(self, item: Dict[str, Any]) -> Dict[str, Any]:
